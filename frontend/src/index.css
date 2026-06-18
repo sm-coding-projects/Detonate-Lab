@@ -1,0 +1,206 @@
+/* Detonate Lab — global styles ported from the design system. */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #eae8e2;
+}
+#root {
+  height: 100%;
+}
+body {
+  font-family: "Schibsted Grotesk", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #1a1915;
+}
+::selection {
+  background: #1a1915;
+  color: #eae8e2;
+}
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(26, 25, 21, 0.22);
+  border-radius: 0;
+  border: 3px solid #eae8e2;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+button {
+  font-family: "Schibsted Grotesk", sans-serif;
+}
+input,
+textarea {
+  font-family: inherit;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes flow {
+  to {
+    background-position: -40px 0;
+  }
+}
+@keyframes fadeup {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.reveal {
+  animation: fadeup 0.4s ease both;
+}
+.an-row {
+  animation: fadeup 0.3s ease both;
+}
+
+/* Hover affordances (the design expressed these as inline style-hover rules). */
+.hover-dim {
+  transition: opacity 0.2s;
+}
+.hover-dim:hover {
+  opacity: 0.6;
+}
+.nav-btn {
+  transition: color 0.15s;
+}
+.nav-btn:hover {
+  color: #1a1915 !important;
+}
+.drop-zone {
+  transition: border-color 0.2s, background 0.2s;
+}
+.drop-zone:hover {
+  border-color: #1a1915 !important;
+  background: #eeece6 !important;
+}
+.submit-btn {
+  transition: background 0.15s;
+}
+.submit-btn:hover {
+  background: #000 !important;
+}
+.sample-row {
+  transition: padding 0.2s;
+}
+.sample-row:hover {
+  padding-left: 10px !important;
+}
+.text-link {
+  transition: opacity 0.15s;
+}
+.text-link:hover {
+  opacity: 0.65;
+}
+
+/* Responsive rules ported from the design. */
+@media (max-width: 760px) {
+  .wrap {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+  .topbar {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  .tagline {
+    display: none !important;
+  }
+  .navtabs {
+    gap: 16px !important;
+    overflow-x: auto;
+    max-width: 66vw;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-end;
+  }
+  .g-verdict {
+    grid-template-columns: 1fr !important;
+    gap: 28px !important;
+  }
+  .g-tiles {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .g-two {
+    grid-template-columns: 1fr !important;
+    gap: 26px !important;
+  }
+  .g-blast {
+    grid-template-columns: 1fr !important;
+    gap: 22px !important;
+  }
+  .blast-canvas {
+    height: 400px !important;
+  }
+  .g-chips {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .doc-title {
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+  .doc-right {
+    text-align: left !important;
+  }
+  .tl-controls {
+    flex-wrap: wrap !important;
+  }
+  .net-flow {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 16px !important;
+  }
+  .net-mid {
+    width: 100% !important;
+  }
+  .url-row {
+    flex-direction: column !important;
+  }
+  .kc-row {
+    grid-template-columns: 30px 1fr auto !important;
+    gap: 12px !important;
+  }
+  .kc-mid {
+    display: none !important;
+  }
+}
+@media (max-width: 440px) {
+  .g-tiles {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .g-chips {
+    grid-template-columns: 1fr !important;
+  }
+}

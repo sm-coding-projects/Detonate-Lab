@@ -1,0 +1,74 @@
+# Detonate Lab — full stack in a single compose file.
+#   1. cp .env.example .env   (or: ./scripts/init-env.sh)
+#   2. docker compose up -d --build
+#   3. open http://localhost:${WEB_PORT:-8080}
+name: detonate-lab
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-detonate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-detonate}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-detonate} -d ${POSTGRES_DB:-detonate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DL_ENVIRONMENT: ${DL_ENVIRONMENT:-production}
+      DL_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-detonate}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-detonate}
+      DL_UPLOAD_DIR: /data/quarantine
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - quarantine:/data/quarantine
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  web:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    networks:
+      - internal
+    depends_on:
+      backend:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  pgdata:
+  quarantine:
+
+networks:
+  internal:
+    driver: bridge
