@@ -28,11 +28,13 @@ build: ## Build images
 rebuild: ## Rebuild images without cache
 	$(COMPOSE) build --no-cache
 
-test: backend-test ## Run the test suite
+test: backend-test frontend-build ## Typecheck the backend and build the frontend
 
-backend-test: ## Run backend tests (creates a local venv under backend/.venv)
-	cd backend && python3 -m venv .venv && . .venv/bin/activate && \
-		pip install -q -r requirements-dev.txt && python -m pytest -q
+backend-test: ## Typecheck the backend (tsc --noEmit)
+	cd backend && npm install --no-audit --no-fund && npm run typecheck
+
+frontend-build: ## Typecheck and build the frontend bundle
+	cd frontend && npm install --no-audit --no-fund && npm run build
 
 clean: ## Stop and remove containers + networks (keep volumes)
 	$(COMPOSE) down --remove-orphans

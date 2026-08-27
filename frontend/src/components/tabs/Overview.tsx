@@ -1,90 +1,219 @@
-import { COLORS, MONO, OPACITY_BY_LEVEL, lvlColor, tag, dot } from "../../lib/theme";
-import type { Report } from "../../lib/types";
+import type { Report } from '../../types';
+import { lvlColor, tag, dot, css, HOT } from '../../theme';
+import { isUnsupported } from '../Provenance';
 
-export function Overview({ report, onOpenKillchain }: { report: Report; onOpenKillchain: () => void }) {
-  const color = lvlColor(report.sevLevel);
+type Props = {
+  report: Report;
+  onOpenStage: (i: number) => void;
+};
+
+const STAGE_OPACITY: Record<string, number> = {
+  critical: 1,
+  high: 0.78,
+  medium: 0.58,
+  low: 0.4,
+  info: 0.28,
+};
+
+// Ported from `tileBox(i)` / `bignum(hot)` in the design.
+function tileBox(i: number): string {
+  return (
+    'padding:24px 18px 22px ' +
+    (i === 0 ? '0' : '18px') +
+    ';' +
+    (i === 0 ? '' : 'border-left:1px solid rgba(26,25,21,0.12)')
+  );
+}
+function bignum(hot: boolean): string {
+  return (
+    "font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:500;letter-spacing:-0.02em;color:" +
+    (hot ? HOT : '#1A1915')
+  );
+}
+
+export default function Overview({ report: s, onOpenStage }: Props) {
+  const col = lvlColor(s.sevLevel);
+
+  const techCount = s.killchain.reduce((a, k) => a + k.techniques.length, 0);
+  // An engine that observes no execution has no event count — "0 behavioral
+  // events" would read as "it did nothing", which is a different claim.
+  const noTimeline = isUnsupported(s.provenance, 'timeline');
+  const noChain = isUnsupported(s.provenance, 'killchain');
+  const tiles = [
+    { l: noChain ? 'MITRE tactics (none mapped)' : 'MITRE tactics', v: noChain ? '—' : String(s.killchain.length), hot: false },
+    { l: noChain ? 'Techniques (none mapped)' : 'Techniques', v: noChain ? '—' : String(techCount), hot: false },
+    {
+      l: noTimeline ? 'Behavioral events (not observed)' : 'Behavioral events',
+      v: noTimeline ? '—' : String(s.timeline.length),
+      hot: false,
+    },
+  ]
+    .concat(s.tiles.map((t) => ({ l: t.l, v: t.v, hot: true })))
+    .map((t, i) => ({
+      l: t.l,
+      v: t.v,
+      boxStyle: tileBox(i),
+      valStyle: bignum(t.hot),
+    }));
+
+  const factors = s.factors.map((f) => {
+    const c = f.on ? lvlColor(f.level) : '#C0BCB2';
+    return {
+      label: f.label,
+      dotStyle: dot(c, 8),
+      txt: f.on ? 'Detected' : 'Not seen',
+      txtStyle:
+        "font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.04em;color:" +
+        (f.on ? lvlColor(f.level) : '#A6A29A'),
+    };
+  });
+
+  // Prefer observed events; fall back to the kill chain so an engine without a
+  // timeline still surfaces its strongest findings instead of an empty column.
+  const topActions = (
+    s.timeline.length > 0
+      ? s.timeline
+          .filter((e) => e.level === 'critical' || e.level === 'high')
+          .map((e) => ({ label: e.label, detail: e.detail, level: e.level }))
+      : s.killchain
+          .filter((k) => k.level === 'critical' || k.level === 'high')
+          .flatMap((k) =>
+            k.techniques.map((t) => ({
+              label: `${k.tactic} — ${t.name}`,
+              detail: t.desc,
+              level: k.level,
+            })),
+          )
+  )
+    .slice(0, 5)
+    .map((e) => ({
+      label: e.label,
+      detail: e.detail,
+      dotStyle: dot(lvlColor(e.level), 8) + ';margin-top:6px',
+    }));
+
+  const numStyle =
+    "font-family:'JetBrains Mono',monospace;font-size:clamp(64px,11vw,120px);font-weight:500;line-height:0.82;letter-spacing:-0.04em;color:" +
+    col;
+  const barStyle =
+    'position:absolute;left:0;top:0;height:100%;background:' +
+    col +
+    ';width:' +
+    s.severity +
+    '%';
 
   return (
     <div className="reveal">
-      {/* Verdict + score */}
       <div
         className="g-verdict"
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0,1.05fr) minmax(0,1fr)",
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0,1.05fr) minmax(0,1fr)',
           gap: 56,
-          padding: "40px 0 38px",
-          borderBottom: `1px solid ${COLORS.hair}`,
+          padding: '40px 0 38px',
+          borderBottom: '1px solid rgba(26,25,21,0.14)',
         }}
       >
         <div>
-          <Label>Threat score</Label>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 18, marginTop: 12 }}>
-            <div
-              style={{
-                fontFamily: MONO,
-                fontSize: "clamp(64px,11vw,120px)",
-                fontWeight: 500,
-                lineHeight: 0.82,
-                letterSpacing: "-0.04em",
-                color,
-              }}
-            >
-              {report.severity}
-            </div>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono',monospace",
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#807B72',
+            }}
+          >
+            Threat score
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: 18,
+              marginTop: 12,
+            }}
+          >
+            <div style={css(numStyle)}>{s.severity}</div>
             <div style={{ paddingBottom: 14 }}>
-              <div style={{ fontFamily: MONO, fontSize: 13, color: COLORS.mut }}>/ 100</div>
+              <div
+                style={{
+                  fontFamily: "'JetBrains Mono',monospace",
+                  fontSize: 13,
+                  color: '#807B72',
+                }}
+              >
+                / 100
+              </div>
               <div style={{ marginTop: 10 }}>
-                <span style={tag(color)}>{report.sevLabel}</span>
+                <span style={css(tag(col))}>{s.sevLabel}</span>
               </div>
             </div>
           </div>
-          <div style={{ height: 3, background: "rgba(26,25,21,0.12)", marginTop: 26, position: "relative" }}>
-            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", background: color, width: `${report.severity}%` }} />
+          <div
+            style={{
+              height: 3,
+              background: 'rgba(26,25,21,0.12)',
+              marginTop: 26,
+              position: 'relative',
+            }}
+          >
+            <div style={css(barStyle)} />
           </div>
-          <div style={{ fontFamily: MONO, fontSize: 11.5, color: COLORS.mut, marginTop: 12 }}>
-            Confidence — {report.confidence}
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono',monospace",
+              fontSize: 11.5,
+              color: '#807B72',
+              marginTop: 12,
+            }}
+          >
+            Confidence — {s.confidence}
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 19, lineHeight: 1.5, fontWeight: 500, letterSpacing: "-0.01em" }}>
-            {report.verdict} — {report.classification}.
+          <div
+            style={{
+              fontSize: 19,
+              lineHeight: 1.5,
+              fontWeight: 500,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {s.verdict} — {s.classification}.
           </div>
-          <p style={{ margin: "16px 0 0", fontSize: 15, lineHeight: 1.66, color: COLORS.faint }}>{report.summary}</p>
+          <p
+            style={{
+              margin: '16px 0 0',
+              fontSize: 15,
+              lineHeight: 1.66,
+              color: '#46443D',
+              textWrap: 'pretty',
+            }}
+          >
+            {s.summary}
+          </p>
         </div>
       </div>
 
-      {/* Tiles */}
       <div
         className="g-tiles"
-        style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", borderBottom: `1px solid ${COLORS.hair}` }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6,1fr)',
+          borderBottom: '1px solid rgba(26,25,21,0.14)',
+        }}
       >
-        {report.tiles.map((t, i) => (
-          <div
-            key={i}
-            style={{
-              padding: `24px 18px 22px ${i === 0 ? "0" : "18px"}`,
-              borderLeft: i === 0 ? "none" : "1px solid rgba(26,25,21,0.12)",
-            }}
-          >
+        {tiles.map((t, i) => (
+          <div key={i} style={css(t.boxStyle)}>
+            <div style={css(t.valStyle)}>{t.v}</div>
             <div
               style={{
-                fontFamily: MONO,
-                fontSize: 30,
-                fontWeight: 500,
-                letterSpacing: "-0.02em",
-                color: t.hot ? COLORS.hot : COLORS.ink,
-              }}
-            >
-              {t.v}
-            </div>
-            <div
-              style={{
-                fontFamily: MONO,
+                fontFamily: "'JetBrains Mono',monospace",
                 fontSize: 10,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: COLORS.mut,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: '#807B72',
                 marginTop: 7,
                 lineHeight: 1.3,
               }}
@@ -95,96 +224,156 @@ export function Overview({ report, onOpenKillchain }: { report: Report; onOpenKi
         ))}
       </div>
 
-      {/* Attack in sequence */}
-      <div style={{ padding: "38px 0", borderBottom: `1px solid ${COLORS.hair}` }}>
-        <Label style={{ marginBottom: 20 }}>The attack, in sequence</Label>
-        <div style={{ display: "flex", gap: 5 }}>
-          {report.killchain.map((k, i) => (
-            <div key={i} onClick={onOpenKillchain} style={{ flex: 1, cursor: "pointer" }}>
-              <div style={{ height: 42, borderRadius: 2, background: lvlColor(k.level), opacity: OPACITY_BY_LEVEL[k.level] }} />
+      {s.killchain.length > 0 && (
+      <div
+        style={{
+          padding: '38px 0',
+          borderBottom: '1px solid rgba(26,25,21,0.14)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "'JetBrains Mono',monospace",
+            fontSize: 11,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: '#807B72',
+            marginBottom: 20,
+          }}
+        >
+          The attack, in sequence
+        </div>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {s.killchain.map((k, i) => {
+            const c = lvlColor(k.level);
+            const barStyleG =
+              'height:42px;border-radius:2px;background:' +
+              c +
+              ';opacity:' +
+              (STAGE_OPACITY[k.level] ?? 0.5);
+            return (
               <div
-                style={{
-                  fontFamily: MONO,
-                  fontSize: 8.5,
-                  color: COLORS.mut,
-                  textAlign: "center",
-                  marginTop: 8,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
+                key={i}
+                onClick={() => onOpenStage(i)}
+                style={{ flex: 1, cursor: 'pointer' }}
               >
-                {k.short}
+                <div style={css(barStyleG)} />
+                <div
+                  style={{
+                    fontFamily: "'JetBrains Mono',monospace",
+                    fontSize: 8.5,
+                    color: '#807B72',
+                    textAlign: 'center',
+                    marginTop: 8,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {k.short}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      )}
+
+      <div
+        className="g-two"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 56,
+          padding: '38px 0 4px',
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono',monospace",
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#807B72',
+              marginBottom: 6,
+            }}
+          >
+            Severity factors
+          </div>
+          {factors.map((f, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '13px 0',
+                borderBottom: '1px solid rgba(26,25,21,0.1)',
+              }}
+            >
+              <span style={css(f.dotStyle)} />
+              <span style={{ flex: 1, fontSize: 14, color: '#1A1915' }}>
+                {f.label}
+              </span>
+              <span style={css(f.txtStyle)}>{f.txt}</span>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono',monospace",
+              fontSize: 11,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#807B72',
+              marginBottom: 6,
+            }}
+          >
+            {s.timeline.length > 0 ? 'Most damaging actions' : 'Strongest findings'}
+          </div>
+          {topActions.length === 0 && (
+            <div
+              style={{
+                padding: '13px 0',
+                fontSize: 13,
+                color: '#A6A29A',
+                lineHeight: 1.5,
+              }}
+            >
+              No high-severity findings.
+            </div>
+          )}
+          {topActions.map((a, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                gap: 12,
+                alignItems: 'flex-start',
+                padding: '13px 0',
+                borderBottom: '1px solid rgba(26,25,21,0.1)',
+              }}
+            >
+              <span style={css(a.dotStyle)} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{a.label}</div>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: '#6E6A60',
+                    lineHeight: 1.45,
+                    marginTop: 2,
+                  }}
+                >
+                  {a.detail}
+                </div>
               </div>
             </div>
           ))}
         </div>
       </div>
-
-      {/* Factors + top actions */}
-      <div className="g-two" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 56, padding: "38px 0 4px" }}>
-        <div>
-          <Label style={{ marginBottom: 6 }}>Severity factors</Label>
-          {report.factors.map((f, i) => {
-            const c = f.on ? lvlColor(f.level) : "#C0BCB2";
-            return (
-              <div
-                key={i}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderBottom: "1px solid rgba(26,25,21,0.1)" }}
-              >
-                <span style={dot(c, 8)} />
-                <span style={{ flex: 1, fontSize: 14, color: COLORS.ink }}>{f.label}</span>
-                <span
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.04em",
-                    color: f.on ? lvlColor(f.level) : "#A6A29A",
-                  }}
-                >
-                  {f.on ? "Detected" : "Not seen"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div>
-          <Label style={{ marginBottom: 6 }}>Most damaging actions</Label>
-          {report.timeline
-            .filter((e) => e.level === "critical" || e.level === "high")
-            .slice(0, 5)
-            .map((a, i) => (
-              <div
-                key={i}
-                style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "13px 0", borderBottom: "1px solid rgba(26,25,21,0.1)" }}
-              >
-                <span style={{ ...dot(lvlColor(a.level), 8), marginTop: 6 }} />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500 }}>{a.label}</div>
-                  <div style={{ fontSize: 12.5, color: "#6E6A60", lineHeight: 1.45, marginTop: 2 }}>{a.detail}</div>
-                </div>
-              </div>
-            ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Label({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div
-      style={{
-        fontFamily: MONO,
-        fontSize: 11,
-        letterSpacing: "0.1em",
-        textTransform: "uppercase",
-        color: COLORS.mut,
-        ...style,
-      }}
-    >
-      {children}
     </div>
   );
 }

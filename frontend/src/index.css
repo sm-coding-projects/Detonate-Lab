@@ -1,4 +1,3 @@
-/* Detonate Lab — global styles ported from the design system. */
 * {
   box-sizing: border-box;
 }
@@ -8,13 +7,13 @@ body {
   height: 100%;
   background: #eae8e2;
 }
-#root {
-  height: 100%;
-}
 body {
-  font-family: "Schibsted Grotesk", system-ui, -apple-system, sans-serif;
+  font-family: 'Schibsted Grotesk', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: #1a1915;
+}
+#root {
+  height: 100%;
 }
 ::selection {
   background: #1a1915;
@@ -33,33 +32,12 @@ body {
   background: transparent;
 }
 button {
-  font-family: "Schibsted Grotesk", sans-serif;
+  font-family: 'Schibsted Grotesk', sans-serif;
 }
-input,
-textarea {
-  font-family: inherit;
-}
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
 }
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-}
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -83,50 +61,6 @@ input[type="range"]::-moz-range-thumb {
 .reveal {
   animation: fadeup 0.4s ease both;
 }
-.an-row {
-  animation: fadeup 0.3s ease both;
-}
-
-/* Hover affordances (the design expressed these as inline style-hover rules). */
-.hover-dim {
-  transition: opacity 0.2s;
-}
-.hover-dim:hover {
-  opacity: 0.6;
-}
-.nav-btn {
-  transition: color 0.15s;
-}
-.nav-btn:hover {
-  color: #1a1915 !important;
-}
-.drop-zone {
-  transition: border-color 0.2s, background 0.2s;
-}
-.drop-zone:hover {
-  border-color: #1a1915 !important;
-  background: #eeece6 !important;
-}
-.submit-btn {
-  transition: background 0.15s;
-}
-.submit-btn:hover {
-  background: #000 !important;
-}
-.sample-row {
-  transition: padding 0.2s;
-}
-.sample-row:hover {
-  padding-left: 10px !important;
-}
-.text-link {
-  transition: opacity 0.15s;
-}
-.text-link:hover {
-  opacity: 0.65;
-}
-
-/* Responsive rules ported from the design. */
 @media (max-width: 760px) {
   .wrap {
     padding-left: 18px !important;
