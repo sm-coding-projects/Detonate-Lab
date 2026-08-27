@@ -27,3 +27,9 @@ data/
 *.log
 .idea/
 .vscode/
+
+# Local agent config
+.claude/settings.local.json
+
+# Coverage
+coverage/
