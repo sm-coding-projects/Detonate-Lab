@@ -1,5 +1,6 @@
 import { pool, query, waitForDb } from './pool.js';
 import { SEED_REPORTS } from './seedData.js';
+import { logger } from '../lib/log.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS samples (
@@ -48,7 +49,7 @@ export async function migrate(): Promise<void> {
   await waitForDb();
   await query(SCHEMA);
   await seed();
-  console.log('[db] migration + seed complete');
+  logger.info('db', 'migration + seed complete');
 }
 
 async function seed(): Promise<void> {
@@ -87,7 +88,7 @@ if (isMain) {
     .then(() => pool.end())
     .then(() => process.exit(0))
     .catch((err) => {
-      console.error('[db] migration failed', err);
+      logger.error('db', 'migration failed', { err: err instanceof Error ? err.message : String(err) });
       process.exit(1);
     });
 }

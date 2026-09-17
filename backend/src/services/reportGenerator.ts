@@ -51,8 +51,28 @@ function baseScore(cat: FileCategory, r: () => number): number {
 }
 
 const GEOS = ['NL', 'RU', 'RO', 'BG', 'SC', 'PA', 'CN', 'IR', 'KP', 'US', 'DE', 'UA'];
+/**
+ * Whitelisted first-octet ranges for synthetic IPs in mock reports. Each pair
+ * is [lo, hi] inclusive of public unicast space only — we deliberately skip
+ * the RFC1918 / CGNAT / loopback / link-local / TEST-NET / multicast /
+ * reserved blocks so a reader doesn't mistake a fabricated address for one
+ * owned by a real organization.
+ */
+const PUBLIC_OCTET_RANGES: ReadonlyArray<[number, number]> = [
+  [1, 9],
+  [11, 76],
+  [77, 99],
+  [101, 126],
+  [128, 171],
+  [173, 191],
+  [193, 197],
+  [199, 202],
+  [204, 223],
+];
+
 function randIp(r: () => number): string {
-  return [between(r, 23, 213), between(r, 1, 254), between(r, 1, 254), between(r, 1, 254)].join('.');
+  const [lo, hi] = PUBLIC_OCTET_RANGES[Math.floor(r() * PUBLIC_OCTET_RANGES.length)];
+  return [between(r, lo, hi), between(r, 1, 254), between(r, 1, 254), between(r, 1, 254)].join('.');
 }
 function hex(r: () => number, n: number): string {
   let s = '';

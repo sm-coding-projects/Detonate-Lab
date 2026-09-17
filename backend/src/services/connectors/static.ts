@@ -3,6 +3,7 @@ import type { Report, SampleInput, Level, KillChainStage, Provenance } from '../
 import { config } from '../../config.js';
 import { generateReport } from '../reportGenerator.js';
 import { scoreToSeverity } from '../../lib/severity.js';
+import { logger } from '../../lib/log.js';
 import type { FileCategory } from '../../lib/filetype.js';
 import type { ProgressFn, SandboxConnector } from './types.js';
 
@@ -304,11 +305,11 @@ export class StaticConnector implements SandboxConnector {
         scanned = true;
       } catch (err) {
         reason = `the retained bytes could not be read (${err instanceof Error ? err.message : String(err)})`;
-        console.warn(`[static] ${reason}`);
+        logger.warn('static', reason);
       }
     } else if (input.source === 'upload') {
       reason = 'the submitted bytes were not retained, so there was nothing to read (set RETAIN_BYTES=true)';
-      console.warn(`[static] ${reason}`);
+      logger.warn('static', reason);
     }
 
     if (input.url) {

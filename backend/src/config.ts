@@ -40,6 +40,7 @@ export const config = {
   rateMaxRequests: int('RATE_MAX_REQUESTS', 120), // general read budget per window
   submitWindowMs: int('SUBMIT_WINDOW_MS', 60_000),
   submitMaxRequests: int('SUBMIT_MAX_REQUESTS', 12), // stricter budget for POST /samples
+  reportMaxRequests: int('REPORT_MAX_REQUESTS', 30), // tight budget for GET /api/reports/:id
 
   // CORS — empty means same-origin only (nginx proxies, so this is the default).
   corsOrigins: list('CORS_ORIGINS', []),

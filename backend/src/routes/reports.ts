@@ -1,11 +1,21 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { query } from '../db/pool.js';
 import { isUuid } from '../lib/validate.js';
+import { rateLimiter } from '../middleware/rateLimit.js';
+import { config } from '../config.js';
 import type { Report } from '../types.js';
 
 export const reportsRouter = Router();
 
+// Tighter per-route budget for /api/reports/:id — a client polling an in-flight
+// job can otherwise hammer this endpoint well above any legitimate use. The
+// global /api limiter still applies on top of this.
+reportsRouter.use(rateLimiter({ windowMs: config.rateWindowMs, max: config.reportMaxRequests, name: 'reports' }));
+
 // GET /api/reports/:id — full report for a completed sample (id == sampleId).
+// Reports are user-private (they contain uploaded filenames, hashes, etc.):
+// `Cache-Control: private, no-store` prevents shared caches (proxies, CDNs,
+// browsers running into a hot reload) from retaining them.
 reportsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!isUuid(req.params.id)) {
@@ -19,6 +29,7 @@ reportsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction
     if (!data) {
       return res.status(404).json({ error: { code: 'not_found', message: 'report not ready' } });
     }
+    res.set('Cache-Control', 'private, no-store');
     res.json({ report: data });
   } catch (err) {
     next(err);
