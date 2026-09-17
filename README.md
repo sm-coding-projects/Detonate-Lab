@@ -27,6 +27,31 @@ docker compose up --build   # builds web + api, starts Postgres, seeds data
 That's it — one compose file, three services. Stop with `docker compose down`
 (add `-v` to also drop the database + quarantine volumes).
 
+## Screenshots
+
+| Landing - submit a sample | Threat overview |
+|---|---|
+| ![Landing - drop a sample or paste a URL](docs/screenshots/landing.png) | ![Threat overview - verdict, score, attack-sequence bar](docs/screenshots/overview.png) |
+| Drop a file (up to 100 MB) or paste a URL. The bottom list is the seeded sample library. | Verdict, severity, confidence, headline metrics, and the kill-chain-as-sequence-bar at the bottom. |
+
+| Kill chain (MITRE ATT&CK) | Execution timeline |
+|---|---|
+| ![Kill chain - tactics and techniques observed](docs/screenshots/killchain.png) | ![Execution timeline - scrubber and event log](docs/screenshots/timeline.png) |
+| Tactic / technique / severity per observed ATT&CK stage. | Playable scrubber across the captured events. |
+
+| Blast radius | Network activity |
+|---|---|
+| ![Blast radius - concentric rings + impact metrics](docs/screenshots/blast.png) | ![Network activity - C2 diagram, indicators, comm log](docs/screenshots/network.png) |
+| Host / process / local-network / identity-and-data impact. | C2 -> victim diagram, indicators (IP / role / geo), encrypted-beacon log. |
+
+The seeded library also produces **low-confidence heuristic** reports from real static
+analysis - they show as `INFO` with explicit `not observed` on the sections a string-only
+scan cannot fill:
+
+| Heuristic (low-confidence) report |
+|---|
+| ![Heuristic overview - low-confidence static finding](docs/screenshots/heuristic-report.png) |
+
 ---
 
 ## Tech stack & why
@@ -59,6 +84,38 @@ That's it — one compose file, three services. Stop with `docker compose down`
 concurrency-limited worker runs the connector, which streams progress lines into
 the job row and finally writes the `report`. The Analyzing screen polls
 `GET /api/jobs/:id` (~400 ms) and, on `done`, loads `GET /api/reports/:id`.
+
+### How an analysis actually runs (UI -> DB -> worker -> UI)
+
+1. **Submit.** Drop a file or paste a URL on the landing page. The browser sends
+   `POST /api/samples` (multipart `file=...` or JSON `{ url }`). The route
+   sniffs the magic bytes (not the extension), sanitises the filename, enforces
+   the 100 MB cap, and validates the URL (http/https only, DNS-resolved, with
+   loopback / RFC1918 / link-local / cloud-metadata rejected).
+2. **Persist.** A `samples` row is written (sha256, size, fileType, source)
+   and a `jobs` row is created in `queued` state pointing at the chosen
+   `SandboxConnector`.
+3. **Worker picks it up.** `services/analysis.ts` runs a concurrency-limited
+   queue (`ANALYSIS_CONCURRENCY`, default 2). Jobs are restart-safe: anything
+   left `queued` or `running` at boot is re-queued. Each worker calls
+   `connector.detonate(sample, onProgress)`.
+4. **Progress stream.** The connector calls `onProgress(line)` for each step
+   ("Acquiring sample", "Hashing", "Static analysis: strings", ...). The
+   worker `UPDATE`s the job row's `progress` JSON column, so the UI sees
+   realistic stages without polling every byte.
+5. **Report write.** When the connector resolves, the worker writes the full
+   `reports.jsonb` row and marks the job `done`. A failed connector writes
+   the job as `error` with a curated message; raw error text never reaches
+   the response.
+6. **Polling + render.** The frontend `AnalyzingView` polls `GET /api/jobs/:id`
+   every ~400 ms; on `status: 'done'` it switches to `AppView` and loads
+   `GET /api/reports/:id` (Cache-Control: private, no-store) into the report
+   tabs. From there the user can scrub the timeline (it has its own play /
+   pause / speed controls) or switch to Kill chain / Blast radius / Network.
+7. **Failure modes.** Rate-limited submissions return `429` with a
+   `Retry-After` header. SSRF / bad URL / oversize uploads return `400` with
+   a curated message. Connector failures surface as `error` jobs with the
+   reason logged but not echoed.
 
 The API contract is documented in [`docs/API.md`](docs/API.md).
 
