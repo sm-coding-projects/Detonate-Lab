@@ -1,6 +1,7 @@
 import { query } from '../db/pool.js';
 import { config } from '../config.js';
 import { uuid } from '../lib/hash.js';
+import { logger } from '../lib/log.js';
 import type { Job, JobStatus, Report, SampleInput } from '../types.js';
 import { getConnector } from './connectors/index.js';
 
@@ -80,7 +81,7 @@ class AnalysisService {
     );
     for (const r of rows) this.pending.push(r.id);
     if (rows.length) {
-      console.log(`[analysis] resumed ${rows.length} unfinished job(s)`);
+      logger.info('analysis', `resumed ${rows.length} unfinished job(s)`, { count: rows.length });
       queueMicrotask(() => this.drain());
     }
   }
@@ -90,7 +91,7 @@ class AnalysisService {
       const id = this.pending.shift()!;
       this.active++;
       this.run(id)
-        .catch((err) => console.error('[analysis] job crashed', id, err))
+        .catch((err) => logger.error('analysis', 'job crashed', { id, err: err instanceof Error ? err.message : String(err) }))
         .finally(() => {
           this.active--;
           this.drain();
@@ -149,7 +150,7 @@ class AnalysisService {
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'analysis failed';
-      console.error('[analysis] failed', jobId, msg);
+      logger.error('analysis', 'job failed', { jobId, err: msg });
       await query(`UPDATE jobs SET status='error', error=$2, updated_at=now() WHERE id=$1`, [jobId, msg]);
     }
   }

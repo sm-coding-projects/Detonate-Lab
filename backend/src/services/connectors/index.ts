@@ -1,4 +1,5 @@
 import { config } from '../../config.js';
+import { logger } from '../../lib/log.js';
 import type { SandboxConnector } from './types.js';
 import { SimulatedConnector } from './simulated.js';
 import { StaticConnector } from './static.js';
@@ -22,10 +23,10 @@ export function getConnector(): SandboxConnector {
     // case 'cape':   instance = new CapeConnector(config); break;
     // case 'cuckoo': instance = new CuckooConnector(config); break;
     default:
-      console.warn(`[connector] unknown SANDBOX_CONNECTOR="${config.connector}", falling back to simulated`);
+      logger.warn('connector', 'unknown SANDBOX_CONNECTOR, falling back to simulated', { requested: config.connector });
       instance = new SimulatedConnector();
   }
-  console.log(`[connector] using "${instance.name}"`);
+  logger.info('connector', `using "${instance.name}"`);
   return instance;
 }
 

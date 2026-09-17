@@ -12,6 +12,7 @@ import { healthRouter } from './routes/health.js';
 import { samplesRouter } from './routes/samples.js';
 import { jobsRouter } from './routes/jobs.js';
 import { reportsRouter } from './routes/reports.js';
+import { logger } from './lib/log.js';
 
 async function main(): Promise<void> {
   const app = express();
@@ -51,20 +52,16 @@ async function main(): Promise<void> {
   // be scanned against an empty string and come back with nothing matched, so
   // fail loudly here rather than let reports quietly claim "no signatures".
   if (connector.name === 'static' && !config.retainBytes) {
-    console.warn(
-      '[api] SANDBOX_CONNECTOR=static requires RETAIN_BYTES=true — uploaded bytes are ' +
-      'not being retained, so file submissions cannot be scanned and will be reported ' +
-      'as inconclusive.',
-    );
+    logger.warn('api', 'SANDBOX_CONNECTOR=static requires RETAIN_BYTES=true — uploaded bytes are not being retained, so file submissions cannot be scanned and will be reported as inconclusive');
   }
   await analysisService.resumeOrphans();
 
   const server = app.listen(config.port, () => {
-    console.log(`[api] Detonate Lab API listening on :${config.port} (env=${config.env})`);
+    logger.info('api', `Detonate Lab API listening on :${config.port}`, { env: config.env });
   });
 
   const shutdown = (sig: string) => {
-    console.log(`[api] ${sig} received, shutting down`);
+    logger.info('api', `${sig} received, shutting down`);
     server.close(() => {
       pool.end().finally(() => process.exit(0));
     });
@@ -75,6 +72,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('[api] fatal startup error', err);
+  logger.error('api', 'fatal startup error', { err: err instanceof Error ? err.message : String(err) });
   process.exit(1);
 });

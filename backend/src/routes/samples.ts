@@ -96,7 +96,7 @@ samplesRouter.post('/', submitLimiter, upload.single('file'), async (req: Reques
 
     // 3) URL submission.
     if (req.body && typeof req.body.url !== 'undefined') {
-      const url = validateSampleUrl(req.body.url);
+      const url = await validateSampleUrl(req.body.url);
       const base = cleanName(new URL(url).pathname.split('/').pop() || 'remote-sample');
       const { label } = sniff(Buffer.alloc(0), base);
       const input: SampleInput = {
@@ -118,12 +118,26 @@ samplesRouter.post('/', submitLimiter, upload.single('file'), async (req: Reques
 });
 
 // Translate multer's own errors (e.g. file too large) to clean HTTP responses.
+// We never forward the raw `err.message` — multer's defaults can leak parse
+// details — only curated strings keyed off the MulterError code.
+const MULTER_MESSAGES: Record<string, { status: number; code: string; message: string }> = {
+  LIMIT_FILE_SIZE: { status: 413, code: 'payload_too_large', message: `File exceeds the ${Math.round(config.maxUploadBytes / 1024 / 1024)} MB limit` },
+  LIMIT_FILE_COUNT: { status: 400, code: 'upload_error', message: 'Too many files in the request' },
+  LIMIT_UNEXPECTED_FILE: { status: 400, code: 'upload_error', message: 'Unexpected file field in the request' },
+  LIMIT_PART_COUNT: { status: 400, code: 'upload_error', message: 'Too many parts in the multipart request' },
+  LIMIT_FIELD_COUNT: { status: 400, code: 'upload_error', message: 'Too many form fields in the request' },
+  LIMIT_FIELD_KEY: { status: 400, code: 'upload_error', message: 'A form field name is too long' },
+  LIMIT_FIELD_VALUE: { status: 400, code: 'upload_error', message: 'A form field value is too long' },
+};
+
 samplesRouter.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: { code: 'payload_too_large', message: `File exceeds the ${Math.round(config.maxUploadBytes / 1024 / 1024)} MB limit` } });
+    const known = MULTER_MESSAGES[err.code];
+    if (known) {
+      return res.status(known.status).json({ error: { code: known.code, message: known.message } });
     }
-    return res.status(400).json({ error: { code: 'upload_error', message: err.message } });
+    // Anything multer throws that we don't have an entry for: still no leak.
+    return res.status(400).json({ error: { code: 'upload_error', message: 'Upload failed' } });
   }
   next(err);
 });
