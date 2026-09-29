@@ -1,0 +1,80 @@
+# AppArmor profile for the per-job sandbox container.
+#
+# Wires in via the runner's per-job `security_opt: apparmor=detonate-sandbox`.
+# This is the strictest profile in the stack: the per-job container runs the
+# submitted bytes, and an escape from this profile is an escape from the
+# detonation tier. We deny everything that isn't on the allowlist.
+#
+# Allowlist:
+#   - the alpine `/bin/sh`, `/bin/busybox` and their libs (read/exec)
+#   - `/tmp` (tmpfs, writable scratch for the sample)
+#   - the bind-mounted sample at `/sample.bin` (read-only)
+#   - DNS via libc nss; nothing else
+
+#include <tunables/global>
+
+profile detonate-sandbox flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/busybox>
+
+  # ---- Network ------------------------------------------------------------
+  # The container can talk to INetSim on the sandbox network. We do not
+  # restrict destinations at the AppArmor layer — the docker network
+  # `internal: true` does that (no route to the host gateway).
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ---- Deny dangerous ops up front ----------------------------------------
+  deny ptrace,
+  deny mount,
+  deny umount,
+  deny umount2,
+  deny pivot_root,
+  deny init_module,
+  deny finit_module,
+  deny delete_module,
+  deny mknod,
+  deny cap_sys_admin,
+  deny cap_sys_module,
+  deny cap_sys_rawio,
+  deny capability sys_resource,
+  deny capability net_raw,
+
+  # ---- Readable paths (busybox / alpine baseline) -------------------------
+  /bin/sh                     ixr,
+  /bin/busybox                ixr,
+  /bin/**                     mr,
+  /sbin/**                    mr,
+  /usr/bin/**                 mr,
+  /usr/lib/**                 mr,
+  /lib/**                     mr,
+  /etc/**                     r,
+  /etc/resolv.conf            r,
+  /etc/hosts                  r,
+  /etc/nsswitch.conf          r,
+  /etc/ssl/certs/**           r,
+
+  # ---- Sample (bind-mounted, read-only) -----------------------------------
+  /sample.bin                 r,
+
+  # ---- Scratch (tmpfs, writable) ------------------------------------------
+  /tmp/                       rw,
+  /tmp/**                     rw,
+  /run/                       rw,
+  /run/**                     rw,
+
+  # ---- Minimal proc access for stat() / getrandom() -----------------------
+  /proc/sys/kernel/random/uuid r,
+  /dev/null                   rw,
+  /dev/random                 r,
+  /dev/urandom                r,
+  /dev/tty                    rw,
+
+  # ---- Deny writes everywhere else ----------------------------------------
+  deny /**                     w,
+  deny /**                     a,
+}
