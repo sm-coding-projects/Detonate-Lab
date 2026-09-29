@@ -1,0 +1,78 @@
+name: sandbox-test
+
+# Unit tests for the sandbox runner + e2e (compose) test.
+#
+# The runner unit tests run on every push — they don't need a docker
+# daemon (they mock `asyncio.create_subprocess_exec`).
+#
+# The compose e2e test (`make sandbox-e2e`) requires DinD, which is
+# only available on self-hosted runners. We expose it as a manual
+# trigger (`workflow_dispatch`) so an operator can opt in.
+#
+# Triggers:
+#   - push to main, develop
+#   - pull_request against main, develop
+#   - workflow_dispatch (manual, runs the e2e job)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  runner-unit:
+    name: sandbox runner (unit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install
+        working-directory: sandbox
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Smoke tests
+        working-directory: sandbox
+        run: python -m unittest tests.test_smoke -v
+
+      - name: Lint
+        working-directory: sandbox
+        # We don't ship flake8/ruff as a dev dep yet; for now use pyflakes
+        # + the stdlib `compile` check. This catches the UnboundLocalError
+        # class of bug from runner.py without the rest of a linter.
+        run: |
+          python -m py_compile runner.py && echo "runner.py compiles"
+          python -m pyflakes runner.py || { echo "pyflakes found issues"; exit 1; }
+
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: sandbox e2e (compose)
+    # DinD doesn't run on github-hosted runners. Manual only.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64, dind]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run end-to-end test
+        run: ./scripts/test-sandbox-e2e.sh
