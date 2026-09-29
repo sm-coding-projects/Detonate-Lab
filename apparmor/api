@@ -1,0 +1,78 @@
+# AppArmor profile for the Detonate Lab API container.
+#
+# Loaded into the host AppArmor by apparmor/parser.sh on first boot. Wires
+# in via docker-compose `security_opt: apparmor=detonate-api`.
+#
+# Threat model: this container accepts untrusted user uploads, so we deny
+# anything that could let an attacker pivot to the host kernel or to other
+# containers on the internal network.
+#
+#  - No ptrace / no mounting / no pivot_root.
+#  - No writes outside the declared scratch dirs.
+#  - No network outside the explicit capability (which is none here; the
+#    api talks to db over the compose internal network via the kernel's
+#    AF_INET path, which AppArmor doesn't gate).
+#  - /data/quarantine is the only path the connector reads; it is read-only
+#    by AppArmor so a compromised node process cannot tamper with retained
+#    samples.
+
+#include <tunables/global>
+
+profile detonate-api flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # ---- Network ------------------------------------------------------------
+  # The api talks to Postgres (db) and (optionally) the sandbox-runner over
+  # AF_INET. AppArmor does not gate socket addresses; this just allows the
+  # socket ops. Capabilities are already dropped at the docker level.
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ---- Deny dangerous ops up front ----------------------------------------
+  deny ptrace,
+  deny mount,
+  deny umount,
+  deny umount2,
+  deny pivot_root,
+  deny init_module,
+  deny finit_module,
+  deny delete_module,
+  deny mknod,
+
+  # ---- Readable paths (explicit allow) ------------------------------------
+  /usr/local/bin/node          ixr,
+  /usr/local/bin/dumb-init     ixr,
+  /usr/lib/**                 mr,
+  /lib/**                     mr,
+  /etc/**                     r,
+  /proc/*/status              r,
+  /proc/sys/kernel/hostname   r,
+  /dev/null                   rw,
+  /dev/urandom                r,
+  /dev/random                 r,
+  /dev/tty                    rw,
+  /run/secrets/**             r,
+
+  # ---- Quarantine (read-only — docker-compose already mounts this ro) -----
+  /data/quarantine/**          r,
+  /data/                      r,
+
+  # ---- Scratch (writable, tmpfs-mounted by compose) ------------------------
+  /tmp/                       rw,
+  /tmp/**                     rw,
+  /run/                       rw,
+  /run/**                     rw,
+
+  # ---- App dir (read-only — image layer) ----------------------------------
+  /app/**                     mr,
+  /app/                       mr,
+
+  # ---- Deny everything else -----------------------------------------------
+  deny /**                     w,
+  deny /**                     a,
+  deny capability             dac_override,
+}

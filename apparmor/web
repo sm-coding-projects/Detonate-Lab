@@ -1,0 +1,77 @@
+# AppArmor profile for the Detonate Lab web (nginx) container.
+#
+# Loaded into the host AppArmor by apparmor/parser.sh on first boot. Wires
+# in via docker-compose `security_opt: apparmor=detonate-web`.
+#
+# Threat model: nginx is the only service bound to the host port. Even with
+# cap_drop: ALL, a kernel-level nginx bug or a malformed config could still
+# touch the host filesystem if we don't profile it. This profile restricts
+# nginx to:
+#   - its served SPA at /usr/share/nginx/html (read-only)
+#   - its config / dynamic modules at /etc/nginx
+#   - scratch dirs (/tmp, /var/cache/nginx, /var/run) for tmpfs work
+#   - the secret mount points for optional BasicAuth + TLS
+
+#include <tunables/global>
+
+profile detonate-web flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # ---- Network ------------------------------------------------------------
+  # nginx listens on 8080/8443 and reverse-proxies to api:8080. AF_INET
+  # stream sockets only.
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ---- Deny dangerous ops up front ----------------------------------------
+  deny ptrace,
+  deny mount,
+  deny umount,
+  deny umount2,
+  deny pivot_root,
+  deny init_module,
+  deny finit_module,
+  deny delete_module,
+  deny mknod,
+
+  # ---- nginx binaries -----------------------------------------------------
+  /usr/sbin/nginx             ixr,
+  /usr/lib/nginx/**           mr,
+  /etc/nginx/**               r,
+  /usr/share/nginx/**         r,
+  /usr/share/zoneinfo/**      r,
+  /var/www/**                 r,
+
+  # ---- Secrets (mounted from compose; nginx reads but never modifies) -----
+  /etc/nginx/secrets/         r,
+  /etc/nginx/secrets/**       r,
+
+  # ---- Scratch (tmpfs by compose) -----------------------------------------
+  /tmp/                       rw,
+  /tmp/**                     rw,
+  /var/cache/nginx/           rw,
+  /var/cache/nginx/**         rw,
+  /var/run/                   rw,
+  /var/run/**                 rw,
+  /run/                       rw,
+  /run/**                     rw,
+
+  # ---- Process info (for nginx worker name + pid) --------------------------
+  /proc/*/status              r,
+  /proc/sys/kernel/hostname   r,
+
+  # ---- Devices (read access for /dev/null, stdio) -------------------------
+  /dev/null                   rw,
+  /dev/random                 r,
+  /dev/urandom                r,
+  /dev/tty                    rw,
+
+  # ---- Deny everything else -----------------------------------------------
+  deny /**                     w,
+  deny /**                     a,
+  deny capability             dac_override,
+}

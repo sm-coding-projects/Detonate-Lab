@@ -1,0 +1,124 @@
+name: scan
+
+# Image + filesystem vulnerability scans.
+#
+# Trivy runs in two modes:
+#   - filesystem: catches the JS deps in backend/ and frontend/
+#   - image: catches what's inside the api + web images after they're built
+#
+# SARIF is uploaded to the GitHub Security tab so findings show up in the
+# PR's "Security" section. Severity filter is HIGH/CRITICAL — the tool
+# emits plenty of LOW/MEDIUM noise from dev deps and the alpine base.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Weekly scan so newly-disclosed CVEs in our pinned images show up.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for `actions/upload-artifact` and `github/codeql-action/upload-sarif`.
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-fs:
+    name: filesystem (backend + frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend dist
+        working-directory: backend
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          mkdir -p dist
+          # We don't need a full dist; just enough for the scanner to see types.
+          echo "/* scan-only placeholder */" > dist/index.js
+
+      - name: Build frontend dist (vite)
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc --noEmit
+          npm run build
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'HIGH,CRITICAL'
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          ignore-unfixed: true
+          # Skip node_modules + dist directories — they're either known-clean
+          # transitive deps or built artefacts that the image-scanner catches.
+          skip-dirs: 'node_modules,dist,.git'
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-fs.sarif'
+          category: 'trivy-filesystem'
+
+  trivy-image:
+    name: image (api + web)
+    runs-on: ubuntu-latest
+    needs: trivy-fs
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, web]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          docker build \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            -t detonate-${{ matrix.target }}:scan \
+            ./${{ matrix.target }}
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'image'
+          scan-ref: 'detonate-${{ matrix.target }}:scan'
+          severity: 'HIGH,CRITICAL'
+          format: 'sarif'
+          output: 'trivy-image-${{ matrix.target }}.sarif'
+          ignore-unfixed: true
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-image-${{ matrix.target }}.sarif'
+          category: 'trivy-image-${{ matrix.target }}'
+
+  gitleaks:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Don't block the PR on findings — surface them as warnings. The
+          # scanner is noisy on first commits; false positives are common.
+          GITLEAKS_ENABLE_SUMMARY: true
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true

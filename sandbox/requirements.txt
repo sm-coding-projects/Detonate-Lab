@@ -1,0 +1,2 @@
+# Pinned for reproducible builds. Bump deliberately, not by `pip install -U`.
+aiohttp==3.10.5

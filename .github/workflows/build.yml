@@ -1,0 +1,162 @@
+name: build
+
+# Pulls the repo, builds the api + web images, runs the unit-test suite,
+# and verifies the compose config is internally consistent.
+#
+# Triggers:
+#   - push to main, develop
+#   - pull_request against main, develop
+#   - workflow_dispatch (manual)
+#
+# The deploy stage is intentionally out of scope here — a separate workflow
+# handles publishing to GHCR and signing the images. This workflow only
+# answers the question "does the code in this commit build and pass tests?".
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  backend-build-test:
+    name: backend (node 20)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: detonate
+          POSTGRES_USER: detonate
+          POSTGRES_PASSWORD: detonate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U detonate"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://detonate:detonate@localhost:5432/detonate
+      PORT: 8080
+      NODE_ENV: test
+      SANDBOX_CONNECTOR: simulated
+      # Bogus values for unit tests — never used outside the boot path.
+      APP_JWT_SECRET: ci-fixture-please-rotate
+      DB_PASSWORD_FILE: /dev/null
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        working-directory: backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: backend
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        working-directory: backend
+        run: npm test -- --reporter=spec
+
+      - name: Build distroless runtime image (manifest only)
+        working-directory: backend
+        # Dry-run the docker build by parsing the Dockerfile; we don't
+        # actually push here — the publish workflow does that. We only want
+        # to know the Dockerfile parses and the runtime layers cache well.
+        run: |
+          docker build --target runtime -t detonate-api:ci --label org.opencontainers.image.revision="$GITHUB_SHA" .
+
+  # ---------------------------------------------------------------------------
+  frontend-build-test:
+    name: frontend (node 20)
+    runs-on: ubuntu-latest
+
+    env:
+      VITE_API_BASE: /api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build runtime image
+        working-directory: frontend
+        run: |
+          docker build -t detonate-web:ci --label org.opencontainers.image.revision="$GITHUB_SHA" .
+
+  # ---------------------------------------------------------------------------
+  compose-config:
+    name: compose config
+    runs-on: ubuntu-latest
+    needs: [backend-build-test, frontend-build-test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose configuration
+        # We render the config against a stripped .env (all variables are
+        # mandatory for `${VAR:?}` substitution in the compose file). The
+        # `docker compose config` exit code is the only thing we check.
+        run: |
+          set -euo pipefail
+          # Set up secrets dir + a stub .env so compose interpolation works.
+          mkdir -p secrets
+          [ -f secrets/web_tls_cert.pem ]    || echo 'unused' > secrets/web_tls_cert.pem
+          [ -f secrets/web_tls_key.pem ]     || echo 'unused' > secrets/web_tls_key.pem
+          [ -f secrets/web_basic_auth_htpasswd ] || echo 'unused' > secrets/web_basic_auth_htpasswd
+          [ -f secrets/sandbox_runner_token ] || head -c 32 /dev/urandom | base64 > secrets/sandbox_runner_token
+          [ -f secrets/db_password ]         || echo 'detonate' > secrets/db_password
+          [ -f .env ] || cp .env.example .env
+          docker compose --env-file .env config --quiet && echo "compose config OK"
+
+      - name: Lint AppArmor profiles (parse-only)
+        if: hash apparmor_parser 2>/dev/null
+        run: |
+          for f in apparmor/api apparmor/web apparmor/sandbox apparmor/runner; do
+            [ -f "$f" ] || continue
+            apparmor_parser -p "$f" >/dev/null && echo "parsed $f" || { echo "FAIL $f"; exit 1; }
+          done
+
+      - name: Validate nginx templates
+        working-directory: frontend
+        # Render the template in all four BASIC_AUTH × TLS combinations and
+        # confirm `nginx -t` accepts each one. The official nginx image
+        # from the distros' repo is already installed on the runner.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nginx-light openssl
+          ../scripts/test-nginx-render.sh

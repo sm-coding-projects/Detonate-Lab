@@ -1,0 +1,76 @@
+# AppArmor profile for the sandbox-runner container.
+#
+# Wires in via docker-compose `security_opt: apparmor=detonate-runner`.
+# The runner owns the Docker socket; it is the only container trusted to
+# create per-job sandboxes. The profile is tight: it can read the Docker
+# socket (which the docker CLI / python SDK use), bind to its 8090 API
+# port, and read the api-supplied quarantine bytes. Nothing else.
+
+#include <tunables/global>
+
+profile detonate-runner flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # ---- Network ------------------------------------------------------------
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ---- Deny dangerous ops up front ----------------------------------------
+  deny ptrace,
+  deny mount,
+  deny umount,
+  deny umount2,
+  deny pivot_root,
+  deny init_module,
+  deny finit_module,
+  deny delete_module,
+  deny mknod,
+
+  # ---- Python interpreter and libraries -----------------------------------
+  /usr/bin/python3*           ixr,
+  /usr/bin/uvicorn            ixr,
+  /usr/local/bin/python*      ixr,
+  /usr/local/bin/uvicorn      ixr,
+  /usr/lib/python3*/**        mr,
+  /usr/lib/**                 mr,
+  /lib/**                     mr,
+  /etc/**                     r,
+  /etc/resolv.conf            r,
+  /etc/ssl/certs/**           r,
+
+  # ---- App dir (read-only image layer) ------------------------------------
+  /app/**                     mr,
+  /app/                       mr,
+
+  # ---- Docker socket (read + write — required for container create) ------
+  /var/run/docker.sock        rwlk,
+
+  # ---- Quarantine (read-only, shared from api) ---------------------------
+  /data/quarantine/           r,
+  /data/quarantine/**         r,
+
+  # ---- Capture artefacts (tmpfs, writable; cleaned up per-job) -----------
+  /tmp/                       rw,
+  /tmp/**                     rw,
+  /run/                       rw,
+  /run/**                     rw,
+  /var/run/                   rw,
+
+  # ---- Process info for tooling ------------------------------------------
+  /proc/*/status              r,
+  /proc/sys/kernel/hostname   r,
+
+  # ---- Devices -----------------------------------------------------------
+  /dev/null                   rw,
+  /dev/random                 r,
+  /dev/urandom                r,
+  /dev/tty                    rw,
+
+  # ---- Deny writes everywhere else ----------------------------------------
+  deny /**                     w,
+  deny /**                     a,
+}

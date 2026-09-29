@@ -3,6 +3,7 @@ import { logger } from '../../lib/log.js';
 import type { SandboxConnector } from './types.js';
 import { SimulatedConnector } from './simulated.js';
 import { StaticConnector } from './static.js';
+import { DockerSandboxConnector } from './dockerSandbox.js';
 
 let instance: SandboxConnector | null = null;
 
@@ -19,6 +20,9 @@ export function getConnector(): SandboxConnector {
       break;
     case 'static':
       instance = new StaticConnector();
+      break;
+    case 'docker':
+      instance = new DockerSandboxConnector();
       break;
     // case 'cape':   instance = new CapeConnector(config); break;
     // case 'cuckoo': instance = new CuckooConnector(config); break;

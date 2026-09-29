@@ -1,4 +1,8 @@
 # Detonate Lab — web tier: serves the SPA and reverse-proxies the API.
+#
+# This file is a TEMPLATE — the web entrypoint renders it into
+# /etc/nginx/conf.d/default.conf with the __BASIC_AUTH_AUTH__ and
+# __TLS_LISTENER__ placeholders substituted at runtime.
 
 # HSTS is only emitted on TLS connections. Defining the value through a map
 # at the http scope keeps plaintext local dev (http://localhost) free of the
@@ -10,6 +14,10 @@ map $https $hsts_header {
     on      "max-age=31536000; includeSubDomains";
 }
 
+# Optional BasicAuth — auth_basic_user_file points at a path that may not
+# exist; nginx treats a missing file as "all requests 500". The entrypoint
+# only sets this directive when the secret is actually mounted, so a
+# non-existent file is impossible.
 server {
     listen        8080;
     server_name   _;
@@ -24,6 +32,10 @@ server {
 
     # Applied to responses that don't set their own add_header (e.g. /api, /).
     include /etc/nginx/security-headers.conf;
+
+    # ---- Optional BasicAuth (activated by the entrypoint) -----------------
+    __BASIC_AUTH_AUTH__
+    __BASIC_AUTH_USER_FILE__
 
     # ---- Compression -------------------------------------------------------
     gzip            on;
@@ -65,3 +77,5 @@ server {
         try_files $uri $uri/ /index.html;
     }
 }
+
+__TLS_LISTENER__
