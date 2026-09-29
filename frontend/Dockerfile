@@ -7,13 +7,29 @@ COPY tsconfig.json tsconfig.node.json vite.config.ts index.html ./
 COPY src ./src
 RUN npm run build
 
-# --- runtime stage (non-root nginx, listens on 8080) -------------------------
+# --- runtime stage (non-root nginx, listens on 8080 / optional 8443) --------
+# We need `envsubst` and `sed` from busybox for the entrypoint. The
+# `nginx-unprivileged` base already has both. We also need `gettext` for
+# `envsubst` in case the alpine variant strips it — keep busybox default.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 USER root
+
+# Wipe the stock default site — our rendered config goes in its place.
 RUN rm -f /etc/nginx/conf.d/default.conf
-COPY nginx.conf            /etc/nginx/conf.d/default.conf
-COPY security-headers.conf /etc/nginx/security-headers.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy the SPA, the security headers, and the BasicAuth + TLS snippets.
+COPY --from=build                /app/dist                  /usr/share/nginx/html
+COPY                             security-headers.conf      /etc/nginx/security-headers.conf
+COPY                             nginx.basic-auth.conf      /etc/nginx/nginx.basic-auth.conf
+COPY                             nginx.tls.conf             /etc/nginx/nginx.tls.conf
+COPY                             nginx.conf.template        /etc/nginx/nginx.conf.template
+COPY                             entrypoint.sh              /docker-entrypoint.d/40-render-config.sh
+
+# The hook directory is the documented extension point for the unprivileged
+# nginx image (it already runs everything in /docker-entrypoint.d/ before
+# starting nginx). Make sure the script is executable for root.
+RUN chmod +x /docker-entrypoint.d/40-render-config.sh
+
 USER nginx
 
 EXPOSE 8080

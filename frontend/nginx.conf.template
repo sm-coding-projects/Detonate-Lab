@@ -1,0 +1,81 @@
+# Detonate Lab — web tier: serves the SPA and reverse-proxies the API.
+#
+# This file is a TEMPLATE — the web entrypoint renders it into
+# /etc/nginx/conf.d/default.conf with the __BASIC_AUTH_AUTH__ and
+# __TLS_LISTENER__ placeholders substituted at runtime.
+
+# HSTS is only emitted on TLS connections. Defining the value through a map
+# at the http scope keeps plaintext local dev (http://localhost) free of the
+# header, while a real HTTPS deployment gets a one-year includeSubDomains
+# header. The same $hsts_header variable is referenced from the included
+# security-headers.conf.
+map $https $hsts_header {
+    default "";
+    on      "max-age=31536000; includeSubDomains";
+}
+
+# Optional BasicAuth — auth_basic_user_file points at a path that may not
+# exist; nginx treats a missing file as "all requests 500". The entrypoint
+# only sets this directive when the secret is actually mounted, so a
+# non-existent file is impossible.
+server {
+    listen        8080;
+    server_name   _;
+    root          /usr/share/nginx/html;
+    index         index.html;
+
+    # Suppress the nginx version banner from Server response headers.
+    server_tokens off;
+
+    # Allow large sample uploads (matches the API's 100 MB limit, with headroom).
+    client_max_body_size 110m;
+
+    # Applied to responses that don't set their own add_header (e.g. /api, /).
+    include /etc/nginx/security-headers.conf;
+
+    # ---- Optional BasicAuth (activated by the entrypoint) -----------------
+    __BASIC_AUTH_AUTH__
+    __BASIC_AUTH_USER_FILE__
+
+    # ---- Compression -------------------------------------------------------
+    gzip            on;
+    gzip_vary       on;
+    gzip_min_length 1024;
+    gzip_types      text/plain text/css application/javascript application/json image/svg+xml font/ttf font/otf;
+
+    # ---- API reverse proxy -------------------------------------------------
+    location /api/ {
+        proxy_pass         http://api:8080;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_request_buffering off;
+    }
+
+    # ---- Static assets: long cache (content-hashed by Vite) ----------------
+    location /assets/ {
+        include /etc/nginx/security-headers.conf;
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        # Cross-origin reads of hashed assets are denied (defense in depth — they
+        # are content-addressed so the cost of a missed render is zero).
+        add_header Cross-Origin-Resource-Policy "same-origin" always;
+        try_files $uri =404;
+    }
+
+    # ---- index.html must never be cached (so new deploys are picked up) -----
+    location = /index.html {
+        include /etc/nginx/security-headers.conf;
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
+    # ---- SPA fallback ------------------------------------------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+__TLS_LISTENER__
