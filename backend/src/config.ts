@@ -29,11 +29,18 @@ export const config = {
   retainBytes: str('RETAIN_BYTES', 'true') === 'true', // keep submitted bytes (quarantined) for real connectors
 
   // Analysis
-  connector: str('SANDBOX_CONNECTOR', 'static'), // 'static' | 'simulated' | (future) 'cape' | 'cuckoo'
+  connector: str('SANDBOX_CONNECTOR', 'static'), // 'static' | 'simulated' | 'docker' | (future) 'cape' | 'cuckoo'
   analysisConcurrency: int('ANALYSIS_CONCURRENCY', 2),
   // Per-step delay for the simulated detonation log (ms). Keeps the Analyzing
   // screen's pacing close to the original design (~400ms/step).
   simStepMs: int('SIM_STEP_MS', 380),
+
+  // Sandbox runner (only used when SANDBOX_CONNECTOR=docker). The api
+  // service talks to the sandbox-runner container over its private
+  // network. SANDBOX_RUNNER_TOKEN is loaded from the compose secret.
+  sandboxRunnerUrl: str('SANDBOX_RUNNER_URL', 'http://sandbox-runner:8090'),
+  sandboxRunnerTokenFile: str('SANDBOX_RUNNER_TOKEN_FILE', '/run/secrets/sandbox_runner_token'),
+  sandboxRunnerTimeoutMs: int('SANDBOX_RUNNER_TIMEOUT_MS', 90_000),
 
   // Rate limiting (token-bucket per IP)
   rateWindowMs: int('RATE_WINDOW_MS', 60_000),

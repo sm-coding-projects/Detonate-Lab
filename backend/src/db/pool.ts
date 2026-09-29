@@ -1,9 +1,43 @@
 import pg from 'pg';
 import { config } from '../config.js';
 import { logger } from '../lib/log.js';
+import { readSecret } from '../lib/secrets.js';
+
+/**
+ * Resolve the database password. Compose mounts `db_password` as a
+ * secret at /run/secrets/db_password; we read it from disk and inject
+ * the password into the URL when DB_PASSWORD_FILE is set. When the file
+ * is missing, we fall back to whatever DATABASE_URL already encodes
+ * (which is `detonate:detonate@...` for local dev).
+ */
+function resolveDatabaseUrl(): string {
+  const url = config.databaseUrl;
+  const pwFile = process.env.DB_PASSWORD_FILE;
+  if (!pwFile) return url;
+
+  let password: string;
+  try {
+    password = readSecret(pwFile, 'DB_PASSWORD');
+  } catch (err) {
+    logger.warn('db', 'DB_PASSWORD_FILE present but unreadable; using DATABASE_URL as-is', {
+      err: (err as Error).message,
+    });
+    return url;
+  }
+
+  try {
+    const u = new URL(url);
+    u.password = password;
+    return u.toString();
+  } catch {
+    // URL itself is malformed — fall back to a string replace on the
+    // conventional `user:password@host` slot.
+    return url.replace(/\/\/([^:@/]+):[^@]*@/, (_, user) => `//${user}:${encodeURIComponent(password)}@`);
+  }
+}
 
 export const pool = new pg.Pool({
-  connectionString: config.databaseUrl,
+  connectionString: resolveDatabaseUrl(),
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
